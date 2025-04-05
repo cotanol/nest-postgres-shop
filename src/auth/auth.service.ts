@@ -10,12 +10,16 @@ import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { LoginUserDto, CreateUserDto } from './dto';
+import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+
+    private readonly jwtService: JwtService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -33,8 +37,11 @@ export class AuthService {
 
       const userResponse: Partial<User> = user; // Usamos Partial para que password sea opcional
       delete userResponse.password;
-      return userResponse;
-      // TODO: Retornar el JWT
+      return {
+        ...userResponse,
+        token: this.getJwtToken({ id: user.id }),
+      }; // Retornamos el usuario sin la contraseña
+      // TODO: Retornar el JWT de acceso
     } catch (error: any) {
       this.handleDBErrors(error);
     }
@@ -45,7 +52,7 @@ export class AuthService {
 
     const user = await this.userRepository.findOne({
       where: { email },
-      select: { email: true, password: true },
+      select: { password: true, id: true },
     });
     if (!user) throw new UnauthorizedException('Credenciales no validas');
 
@@ -53,8 +60,22 @@ export class AuthService {
     if (!isPasswordValid)
       throw new UnauthorizedException('Credenciales no validas');
 
-    return user;
-    //TODO: Retornar el JWT
+    return {
+      ...user,
+      token: this.getJwtToken({ id: user.id }),
+    };
+  }
+
+  async checkAuthStatus(user: User) {
+    return {
+      ...user,
+      token: this.getJwtToken({ id: user.id }),
+    };
+  }
+
+  private getJwtToken(payload: JwtPayload) {
+    const token = this.jwtService.sign(payload);
+    return token;
   }
 
   private handleDBErrors(error: any): never {
